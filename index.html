@@ -214,18 +214,47 @@
     });
   }
 
-  function selectForGeocoding(rowIndex, e) {
+async function selectForGeocoding(rowIndex, e) {
     e.stopPropagation();
     selectedItem = allItems.find(i => i.rowIndex === rowIndex);
-    filterList(); // Перемалювати виділення
+    filterList(); // Перемалювати виділення картки
 
     const banner = document.getElementById('info-banner');
     banner.style.display = 'block';
-    banner.innerHTML = `<b>Режим прив'язки:</b><br>${selectedItem.name} (${selectedItem.addressThoroughfare})<br><i>Клікніть мишкою на карті, щоб вказати точне місце.</i>`;
+    banner.innerHTML = `<b>Режим прив'язки:</b><br>${selectedItem.name} (${selectedItem.addressThoroughfare}, ${selectedItem.addressLocatorDesignator})<br><i>Вкажіть точне місце на карті кліком.</i>`;
 
+    // 1. Якщо координати вже були — ставимо маркер і центруємо на них
     if (selectedItem.lat && selectedItem.lon) {
       setTempMarker(selectedItem.lat, selectedItem.lon);
       map.setView([selectedItem.lat, selectedItem.lon], 16);
+      return;
+    }
+
+    // 2. Якщо координат немає — шукаємо приблизне розташування через Nominatim API (Кременчук)
+    const street = selectedItem.addressThoroughfare || '';
+    const building = selectedItem.addressLocatorDesignator || '';
+    const searchQuery = `Україна, Кременчук, ${street} ${building}`.trim();
+
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery)}`
+      );
+      const results = await response.json();
+
+      if (results && results.length > 0) {
+        const lat = parseFloat(results[0].lat);
+        const lon = parseFloat(results[0].lon);
+
+        // Центруємо карту на знайденій за адресою вулиці/будинку і ставимо маркер
+        map.setView([lat, lon], 17);
+        setTempMarker(lat, lon);
+      } else {
+        // Якщо точної адреси не знайдено, просто центруємо на центр Кременчука
+        map.setView([49.063, 33.410], 14);
+      }
+    } catch (err) {
+      console.error('Помилка геокодування:', err);
+      map.setView([49.063, 33.410], 14);
     }
   }
 
