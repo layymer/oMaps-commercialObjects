@@ -274,14 +274,20 @@ async function selectForGeocoding(rowIndex, e) {
     });
   }
 
-  async function saveCoordinates(lat, lon) {
-    selectedItem.lat = lat;
-    selectedItem.lon = lon;
+async function saveCoordinates(lat, lon) {
+    if (!selectedItem) return;
+
+    // Створюємо копію об'єкта та оновлюємо координати
+    const payload = {
+      ...selectedItem,
+      lat: lat,
+      lon: lon
+    };
 
     const res = await fetch(WORKER_URL, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(selectedItem)
+      body: JSON.stringify(payload)
     });
 
     if (res.ok) {
@@ -290,6 +296,8 @@ async function selectForGeocoding(rowIndex, e) {
       if (activeMarker) map.removeLayer(activeMarker);
       selectedItem = null;
       loadData();
+    } else {
+      alert('Помилка збереження координат!');
     }
   }
 
