@@ -40,6 +40,13 @@
     .form-group label { font-size: 11px; font-weight: bold; margin-bottom: 3px; color: #475569; }
     .form-group input, .form-group select { padding: 6px; font-size: 12px; border: 1px solid #ccc; border-radius: 4px; }
     .full-width { grid-column: span 2; }
+    /* Перевизначаємо курсор карти Leaflet з "руки" на чіткий вказівник */
+.leaflet-container {
+  cursor: crosshair !important;
+}
+.leaflet-interactive {
+  cursor: pointer !important;
+}
   </style>
 </head>
 <body>
