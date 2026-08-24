@@ -277,11 +277,10 @@ async function selectForGeocoding(rowIndex, e) {
 async function saveCoordinates(lat, lon) {
     if (!selectedItem) return;
 
-    // Створюємо копію об'єкта та оновлюємо координати
     const payload = {
       ...selectedItem,
-      lat: lat,
-      lon: lon
+      lat: Number(lat),
+      lon: Number(lon)
     };
 
     const res = await fetch(WORKER_URL, {
@@ -290,17 +289,18 @@ async function saveCoordinates(lat, lon) {
       body: JSON.stringify(payload)
     });
 
-    if (res.ok) {
+    const data = await res.json().catch(() => ({}));
+
+    if (res.ok && data.status === 'updated') {
       alert('Координати успішно збережено!');
       document.getElementById('info-banner').style.display = 'none';
       if (activeMarker) map.removeLayer(activeMarker);
       selectedItem = null;
-      loadData();
+      await loadData();
     } else {
-      alert('Помилка збереження координат!');
+      alert('Помилка збереження: ' + (data.error || 'Не вдалося оновити Google Таблицю'));
     }
   }
-
   function openFormForEdit(rowIndex, e) {
     if (e) e.stopPropagation();
     const item = allItems.find(i => i.rowIndex === rowIndex);
