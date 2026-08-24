@@ -4,13 +4,23 @@
   <meta charset="UTF-8">
   <title>Адмін-панель | Реєстр об'єктів торгівлі</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
   <style>
     * { box-sizing: border-box; }
     body { margin: 0; font-family: system-ui, sans-serif; display: flex; height: 100vh; background: #f4f6f8; }
     
+    /* Auth Overlay */
+    #auth-screen { position: fixed; inset: 0; background: #0f172a; color: white; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 5000; }
+    #auth-card { background: #1e293b; padding: 30px; border-radius: 8px; text-align: center; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+    #auth-card h2 { margin-top: 0; font-size: 20px; }
+    #auth-error { color: #ef4444; margin-top: 15px; font-size: 13px; display: none; }
+
+    /* App Structure */
+    #app-container { display: flex; width: 100%; height: 100%; visibility: hidden; }
     #sidebar { width: 420px; background: #fff; border-right: 1px solid #ddd; display: flex; flex-direction: column; }
-    #header { padding: 15px; background: #1e293b; color: white; }
-    #header h2 { margin: 0 0 10px 0; font-size: 18px; }
+    #header { padding: 15px; background: #1e293b; color: white; display: flex; flex-direction: column; gap: 8px; }
+    #header h2 { margin: 0; font-size: 18px; }
+    #header-actions { display: flex; justify-content: space-between; align-items: center; }
     #controls { padding: 10px 15px; border-bottom: 1px solid #eee; display: flex; gap: 8px; }
     #controls input, #controls select { padding: 6px 10px; font-size: 13px; border: 1px solid #ccc; border-radius: 4px; flex: 1; }
     
@@ -27,12 +37,12 @@
     .btn { padding: 4px 8px; font-size: 11px; border: none; border-radius: 4px; cursor: pointer; }
     .btn-blue { background: #2563eb; color: white; }
     .btn-red { background: #ef4444; color: white; }
+    .btn-gray { background: #64748b; color: white; }
     
     #map-container { flex: 1; position: relative; }
     #map { width: 100%; height: 100%; }
     #info-banner { position: absolute; top: 10px; right: 10px; z-index: 1000; background: rgba(15, 23, 42, 0.85); color: white; padding: 10px 15px; border-radius: 6px; font-size: 13px; max-width: 350px; display: none; }
 
-    /* Modal Form */
     #modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 2000; align-items: center; justify-content: center; }
     .modal-body { background: white; width: 600px; max-height: 85vh; overflow-y: auto; padding: 20px; border-radius: 8px; }
     .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -40,36 +50,53 @@
     .form-group label { font-size: 11px; font-weight: bold; margin-bottom: 3px; color: #475569; }
     .form-group input, .form-group select { padding: 6px; font-size: 12px; border: 1px solid #ccc; border-radius: 4px; }
     .full-width { grid-column: span 2; }
-    /* Перевизначаємо курсор карти Leaflet з "руки" на чіткий вказівник */
-.leaflet-container {
-  cursor: crosshair !important;
-}
-.leaflet-interactive {
-  cursor: pointer !important;
-}
+    
+    .leaflet-container { cursor: crosshair !important; }
+    .leaflet-interactive { cursor: pointer !important; }
   </style>
 </head>
 <body>
 
-<div id="sidebar">
-  <div id="header">
-    <h2>Адміністрування реестру</h2>
-    <button class="btn btn-blue" onclick="openFormForCreate()">+ Додати новий об'єкт</button>
+<!-- Екран Авторизації -->
+<div id="auth-screen">
+  <div id="auth-card">
+    <h2>Авторизація в системі</h2>
+    <p style="font-size: 13px; color: #94a3b8; margin-bottom: 20px;">Увійдіть за допомогою службового Google-акаунту</p>
+    <div id="g_id_onload"
+         data-client_id="861587633724-jr7v69be2ubcpdhhgfa2nn0na4bnj2lj.apps.googleusercontent.com"
+         data-callback="handleCredentialResponse"
+         data-auto_prompt="false">
+    </div>
+    <div class="g_id_signin" data-type="standard" data-size="large" data-theme="outline"></div>
+    <div id="auth-error">Доступ заборонено. Ваш e-mail відсутній у списку дозволених.</div>
   </div>
-  <div id="controls">
-    <input type="text" id="searchInput" placeholder="Пошук..." oninput="filterList()">
-    <select id="coordFilter" onchange="filterList()">
-      <option value="all">Усі об'єкти</option>
-      <option value="no-coords" selected>⚠️ Без координат</option>
-      <option value="has-coords">✅ З координатами</option>
-    </select>
-  </div>
-  <div id="list"></div>
 </div>
 
-<div id="map-container">
-  <div id="info-banner"></div>
-  <div id="map"></div>
+<!-- Основний інтерфейс -->
+<div id="app-container">
+  <div id="sidebar">
+    <div id="header">
+      <h2>Адміністрування реєстру</h2>
+      <div id="header-actions">
+        <button class="btn btn-blue" onclick="openFormForCreate()">+ Додати новий об'єкт</button>
+        <button class="btn btn-gray" onclick="logout()">Вийти</button>
+      </div>
+    </div>
+    <div id="controls">
+      <input type="text" id="searchInput" placeholder="Пошук..." oninput="filterList()">
+      <select id="coordFilter" onchange="filterList()">
+        <option value="all">Усі об'єкти</option>
+        <option value="no-coords" selected>⚠️ Без координат</option>
+        <option value="has-coords">✅ З координатами</option>
+      </select>
+    </div>
+    <div id="list"></div>
+  </div>
+
+  <div id="map-container">
+    <div id="info-banner"></div>
+    <div id="map"></div>
+  </div>
 </div>
 
 <!-- Modal Form -->
@@ -144,32 +171,73 @@
   </div>
 </div>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
   const WORKER_URL = 'https://commercialobjects.kremsupp.workers.dev';
   let map, activeMarker = null, allItems = [], selectedItem = null;
+  let idToken = sessionStorage.getItem('google_id_token') || '';
 
   document.addEventListener('DOMContentLoaded', () => {
-    map = L.map('map').setView([49.063, 33.410], 13);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-
-    // Клік по карті для вибору координат обраного об'єкта
-    map.on('click', (e) => {
-      if (!selectedItem) {
-        alert('Спочатку виберіть об\'єкт зі списку ліворуч для геоприв\'язки!');
-        return;
-      }
-      setTempMarker(e.latlng.lat, e.latlng.lng);
-    });
-
-    loadData();
+    if (idToken) {
+      initApp();
+    }
   });
 
+  function handleCredentialResponse(response) {
+    idToken = response.credential;
+    sessionStorage.setItem('google_id_token', idToken);
+    initApp();
+  }
+
+  function logout() {
+    sessionStorage.removeItem('google_id_token');
+    location.reload();
+  }
+
+  function initApp() {
+    document.getElementById('auth-screen').style.display = 'none';
+    document.getElementById('app-container').style.visibility = 'visible';
+
+    if (!map) {
+      map = L.map('map').setView([49.063, 33.410], 13);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+      map.on('click', (e) => {
+        if (!selectedItem) {
+          alert('Спочатку виберіть об\'єкт зі списку ліворуч для геоприв\'язки!');
+          return;
+        }
+        setTempMarker(e.latlng.lat, e.latlng.lng);
+      });
+    }
+
+    loadData();
+  }
+
+  async function fetchWithAuth(url, options = {}) {
+    options.headers = {
+      ...options.headers,
+      'Authorization': `Bearer ${idToken}`
+    };
+    const res = await fetch(url, options);
+    if (res.status === 403) {
+      document.getElementById('auth-screen').style.display = 'flex';
+      document.getElementById('app-container').style.visibility = 'hidden';
+      document.getElementById('auth-error').style.display = 'block';
+      sessionStorage.removeItem('google_id_token');
+      throw new Error('Unauthorized');
+    }
+    return res;
+  }
+
   async function loadData() {
-    const res = await fetch(WORKER_URL);
-    allItems = await res.json();
-    filterList();
+    try {
+      const res = await fetchWithAuth(WORKER_URL);
+      allItems = await res.json();
+      filterList();
+    } catch (err) {
+      console.error('Помилка завантаження даних:', err);
+    }
   }
 
   function filterList() {
@@ -214,23 +282,21 @@
     });
   }
 
-async function selectForGeocoding(rowIndex, e) {
+  async function selectForGeocoding(rowIndex, e) {
     e.stopPropagation();
     selectedItem = allItems.find(i => i.rowIndex === rowIndex);
-    filterList(); // Перемалювати виділення картки
+    filterList();
 
     const banner = document.getElementById('info-banner');
     banner.style.display = 'block';
     banner.innerHTML = `<b>Режим прив'язки:</b><br>${selectedItem.name} (${selectedItem.addressThoroughfare}, ${selectedItem.addressLocatorDesignator})<br><i>Вкажіть точне місце на карті кліком.</i>`;
 
-    // 1. Якщо координати вже були — ставимо маркер і центруємо на них
     if (selectedItem.lat && selectedItem.lon) {
       setTempMarker(selectedItem.lat, selectedItem.lon);
       map.setView([selectedItem.lat, selectedItem.lon], 16);
       return;
     }
 
-    // 2. Якщо координат немає — шукаємо приблизне розташування через Nominatim API (Кременчук)
     const street = selectedItem.addressThoroughfare || '';
     const building = selectedItem.addressLocatorDesignator || '';
     const searchQuery = `Україна, Кременчук, ${street} ${building}`.trim();
@@ -244,12 +310,9 @@ async function selectForGeocoding(rowIndex, e) {
       if (results && results.length > 0) {
         const lat = parseFloat(results[0].lat);
         const lon = parseFloat(results[0].lon);
-
-        // Центруємо карту на знайденій за адресою вулиці/будинку і ставимо маркер
         map.setView([lat, lon], 17);
         setTempMarker(lat, lon);
       } else {
-        // Якщо точної адреси не знайдено, просто центруємо на центр Кременчука
         map.setView([49.063, 33.410], 14);
       }
     } catch (err) {
@@ -274,7 +337,7 @@ async function selectForGeocoding(rowIndex, e) {
     });
   }
 
-async function saveCoordinates(lat, lon) {
+  async function saveCoordinates(lat, lon) {
     if (!selectedItem) {
       alert('Помилка: об\'єкт для геоприв\'язки не вибрано!');
       return;
@@ -287,7 +350,7 @@ async function saveCoordinates(lat, lon) {
     };
 
     try {
-      const res = await fetch(WORKER_URL, {
+      const res = await fetchWithAuth(WORKER_URL, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -345,7 +408,7 @@ async function saveCoordinates(lat, lon) {
     });
 
     const method = rowIndex ? 'PUT' : 'POST';
-    const res = await fetch(WORKER_URL, {
+    const res = await fetchWithAuth(WORKER_URL, {
       method: method,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -362,7 +425,7 @@ async function saveCoordinates(lat, lon) {
     e.stopPropagation();
     if (!confirm('Ви дійсно бажаєте перевести цей дозвіл у статус "скасований"?')) return;
 
-    const res = await fetch(`${WORKER_URL}?rowIndex=${rowIndex}`, { method: 'DELETE' });
+    const res = await fetchWithAuth(`${WORKER_URL}?rowIndex=${rowIndex}`, { method: 'DELETE' });
     if (res.ok) {
       alert('Статус змінено на "скасований"');
       loadData();
