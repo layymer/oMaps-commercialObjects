@@ -132,7 +132,11 @@
         </div>
         <div class="form-group">
           <label>Режим роботи:</label>
-          <input type="text" id="field_openingHours" value="Пн-Нд 08:00-20:00">
+          <input type="text" id="field_openingHours" placeholder="напр. Пн-Нд 08:00-20:00">
+        </div>
+        <div class="form-group">
+          <label>Уточнення (перерва):</label>
+          <input type="text" id="field_availabilityRestriction" placeholder="напр. 13:00-14:00 (необов'язково)">
         </div>
         <div class="form-group">
           <label>Вулиця:</label>
@@ -173,8 +177,8 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-  const WORKER_URL = 'https://commercialobjects.kremsupp.workers.dev';
-  let map, activeMarker = null, allItems = [], selectedItem = null;
+  const WORKER_URL = '/api';
+  let map, markersLayer, activeMarker = null, allItems = [], selectedItem = null;
   let idToken = sessionStorage.getItem('google_id_token') || '';
 
   document.addEventListener('DOMContentLoaded', () => {
@@ -199,8 +203,17 @@
     document.getElementById('app-container').style.visibility = 'visible';
 
     if (!map) {
-      map = L.map('map').setView([49.063, 33.410], 13);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+      map = L.map('map', {
+        maxZoom: 22
+      }).setView([49.063, 33.410], 14);
+
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 22,
+        maxNativeZoom: 19,
+        attribution: '&copy; OpenStreetMap contributors'
+      }).addTo(map);
+
+      markersLayer = L.layerGroup().addTo(map);
 
       map.on('click', (e) => {
         if (!selectedItem) {
@@ -233,10 +246,22 @@
   async function loadData() {
     try {
       const res = await fetchWithAuth(WORKER_URL);
-      allItems = await res.json();
+      const data = await res.json();
+      if (!res.ok || !Array.isArray(data)) {
+        console.error('Помилка отримання даних:', data);
+        allItems = [];
+        filterList();
+        if (data && data.error) {
+          alert(`Помилка завантаження даних: ${data.error}`);
+        }
+        return;
+      }
+      allItems = data;
       filterList();
     } catch (err) {
       console.error('Помилка завантаження даних:', err);
+      allItems = [];
+      filterList();
     }
   }
 
@@ -262,6 +287,10 @@
     const container = document.getElementById('list');
     container.innerHTML = '';
 
+    if (markersLayer) {
+      markersLayer.clearLayers();
+    }
+
     items.forEach(item => {
       const hasCoords = item.lat && item.lon;
       const card = document.createElement('div');
@@ -269,8 +298,8 @@
       
       card.innerHTML = `
         <div class="item-title">${item.name || 'Без назви (вивіски)'}</div>
-        <div class="item-sub"><b>Суб'єкт:</b> ${item.entityName}</div>
-        <div class="item-sub"><b>Адреса:</b> вул. ${item.addressThoroughfare}, ${item.addressLocatorDesignator}</div>
+        <div class="item-sub"><b>Суб'єкт:</b> ${item.entityName || '-'}</div>
+        <div class="item-sub"><b>Адреса:</b> вул. ${item.addressThoroughfare || ''}, ${item.addressLocatorDesignator || ''}</div>
         <div class="item-sub"><b>Координати:</b> ${hasCoords ? `${item.lat.toFixed(5)}, ${item.lon.toFixed(5)}` : '⚠️ Відсутні'}</div>
         <div class="item-actions">
           <button class="btn btn-blue" onclick="selectForGeocoding(${item.rowIndex}, event)">Прив'язати точку</button>
@@ -278,22 +307,46 @@
           <button class="btn btn-red" onclick="deleteObject(${item.rowIndex}, event)">Скасувати</button>
         </div>
       `;
+
+      card.onclick = () => {
+        if (hasCoords && map) {
+          map.setView([item.lat, item.lon], Math.max(map.getZoom(), 18));
+        }
+      };
+
       container.appendChild(card);
+
+      if (hasCoords && markersLayer) {
+        const marker = L.marker([item.lat, item.lon]);
+        marker.bindPopup(`
+          <div style="font-size: 13px; line-height: 1.4;">
+            <b style="font-size: 14px;">${item.name || 'Рекламний об\'єкт'}</b><br>
+            <b>Суб'єкт:</b> ${item.entityName || '-'}<br>
+            <b>Адреса:</b> вул. ${item.addressThoroughfare || ''}, ${item.addressLocatorDesignator || ''}<br>
+            <b>Дозвіл:</b> ${item.permissionNumber || '-'} (${item.permissionStatus || 'чинний'})<br>
+            <div style="margin-top: 8px; display: flex; gap: 6px;">
+              <button class="btn btn-blue" style="padding: 4px 8px; font-size: 11px;" onclick="selectForGeocoding(${item.rowIndex}, event)">Перемістити</button>
+              <button class="btn" style="padding: 4px 8px; font-size: 11px;" onclick="openFormForEdit(${item.rowIndex}, event)">Редагувати</button>
+            </div>
+          </div>
+        `);
+        markersLayer.addLayer(marker);
+      }
     });
   }
 
   async function selectForGeocoding(rowIndex, e) {
-    e.stopPropagation();
+    if (e) e.stopPropagation();
     selectedItem = allItems.find(i => i.rowIndex === rowIndex);
     filterList();
 
     const banner = document.getElementById('info-banner');
     banner.style.display = 'block';
-    banner.innerHTML = `<b>Режим прив'язки:</b><br>${selectedItem.name} (${selectedItem.addressThoroughfare}, ${selectedItem.addressLocatorDesignator})<br><i>Вкажіть точне місце на карті кліком.</i>`;
+    banner.innerHTML = `<b>Режим прив'язки:</b><br>${selectedItem.name || 'Об\'єкт'} (${selectedItem.addressThoroughfare || ''}, ${selectedItem.addressLocatorDesignator || ''})<br><i>Вкажіть точне місце на карті кліком або перетягніть маркер.</i>`;
 
     if (selectedItem.lat && selectedItem.lon) {
       setTempMarker(selectedItem.lat, selectedItem.lon);
-      map.setView([selectedItem.lat, selectedItem.lon], 16);
+      map.setView([selectedItem.lat, selectedItem.lon], 19);
       return;
     }
 
@@ -310,14 +363,14 @@
       if (results && results.length > 0) {
         const lat = parseFloat(results[0].lat);
         const lon = parseFloat(results[0].lon);
-        map.setView([lat, lon], 17);
+        map.setView([lat, lon], 19);
         setTempMarker(lat, lon);
       } else {
-        map.setView([49.063, 33.410], 14);
+        map.setView([49.063, 33.410], 15);
       }
     } catch (err) {
       console.error('Помилка геокодування:', err);
-      map.setView([49.063, 33.410], 14);
+      map.setView([49.063, 33.410], 15);
     }
   }
 
@@ -401,10 +454,10 @@
     const rowIndex = document.getElementById('field_rowIndex').value;
     
     const payload = {};
-    const fields = ['rowIndex', 'uid', 'name', 'entityName', 'entityId', 'type', 'openingHours', 'addressThoroughfare', 'addressLocatorDesignator', 'lat', 'lon', 'permissionNumber', 'permissionStatus'];
+    const fields = ['rowIndex', 'uid', 'name', 'entityName', 'entityId', 'type', 'openingHours', 'availabilityRestriction', 'addressThoroughfare', 'addressLocatorDesignator', 'lat', 'lon', 'permissionNumber', 'permissionStatus'];
     fields.forEach(f => {
       const el = document.getElementById(`field_${f}`);
-      if (el) payload[f] = el.value;
+      if (el) payload[f] = el.value.trim();
     });
 
     const method = rowIndex ? 'PUT' : 'POST';

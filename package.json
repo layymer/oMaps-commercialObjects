@@ -1,0 +1,17 @@
+{
+  "name": "omaps-commercialobjects",
+  "version": "1.0.0",
+  "description": "Адмін-панель | Реєстр об'єктів торгівлі",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "dev": "node server.js",
+    "build": "node -e \"console.log('Build succeeded')\"",
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "express": "^4.21.2",
+    "google-auth-library": "^11.0.2"
+  }
+}

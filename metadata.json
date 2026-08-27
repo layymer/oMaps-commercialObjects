@@ -1,0 +1,6 @@
+{
+  "name": "oMaps Commercial Objects",
+  "description": "Адмін-панель реєстру об'єктів торгівлі та картографічної геоприв'язки",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
