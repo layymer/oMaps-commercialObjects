@@ -65,9 +65,19 @@
     <div id="g_id_onload"
          data-client_id="861587633724-jr7v69be2ubcpdhhgfa2nn0na4bnj2lj.apps.googleusercontent.com"
          data-callback="handleCredentialResponse"
-         data-auto_prompt="false">
+         data-auto_select="true"
+         data-auto_prompt="true"
+         data-itp_support="true">
     </div>
-    <div class="g_id_signin" data-type="standard" data-size="large" data-theme="outline"></div>
+    <div class="g_id_signin"
+         data-type="standard"
+         data-shape="rectangular"
+         data-theme="outline"
+         data-text="signin_with"
+         data-size="large"
+         data-logo_alignment="left"
+         data-width="300">
+    </div>
     <div id="auth-error">Доступ заборонено. Ваш e-mail відсутній у списку дозволених.</div>
   </div>
 </div>
@@ -180,22 +190,45 @@
 <script>
   const WORKER_URL = window.API_BASE_URL || '/api';
   let map, markersLayer, activeMarker = null, allItems = [], selectedItem = null;
-  let idToken = sessionStorage.getItem('google_id_token') || '';
+  let idToken = localStorage.getItem('google_id_token') || sessionStorage.getItem('google_id_token') || '';
+
+  function isTokenValid(token) {
+    if (!token) return false;
+    try {
+      const parts = token.split('.');
+      if (parts.length !== 3) return false;
+      const base64Url = parts[1];
+      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+      const payload = JSON.parse(atob(base64));
+      const now = Math.floor(Date.now() / 1000);
+      return payload.exp && (payload.exp > now + 30);
+    } catch (e) {
+      return false;
+    }
+  }
 
   document.addEventListener('DOMContentLoaded', () => {
-    if (idToken) {
+    if (isTokenValid(idToken)) {
       initApp();
+    } else {
+      idToken = '';
+      localStorage.removeItem('google_id_token');
+      sessionStorage.removeItem('google_id_token');
     }
   });
 
   function handleCredentialResponse(response) {
     idToken = response.credential;
-    sessionStorage.setItem('google_id_token', idToken);
+    localStorage.setItem('google_id_token', idToken);
     initApp();
   }
 
   function logout() {
+    localStorage.removeItem('google_id_token');
     sessionStorage.removeItem('google_id_token');
+    if (window.google && google.accounts && google.accounts.id) {
+      google.accounts.id.disableAutoSelect();
+    }
     location.reload();
   }
 
@@ -248,6 +281,8 @@
       authErr.style.display = 'block';
       authErr.innerText = 'Доступ заборонено або термін дії сесії закінчився. Будь ласка, увійдіть за допомогою службового Google-акаунту.';
       sessionStorage.removeItem('google_id_token');
+      localStorage.removeItem('google_id_token');
+      idToken = '';
       throw new Error('Unauthorized');
     }
     return res;
