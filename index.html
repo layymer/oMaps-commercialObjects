@@ -232,11 +232,20 @@
       ...options.headers,
       'Authorization': `Bearer ${idToken}`
     };
-    const res = await fetch(url, options);
-    if (res.status === 403) {
+    let res;
+    try {
+      res = await fetch(url, options);
+    } catch (networkErr) {
+      console.warn('Network fetch error:', networkErr);
+      throw new Error("Не вдалося з'єднатися з сервером. Перевірте з'єднання або перезавантажте сторінку.");
+    }
+
+    if (res.status === 403 || res.status === 401) {
       document.getElementById('auth-screen').style.display = 'flex';
       document.getElementById('app-container').style.visibility = 'hidden';
-      document.getElementById('auth-error').style.display = 'block';
+      const authErr = document.getElementById('auth-error');
+      authErr.style.display = 'block';
+      authErr.innerText = 'Доступ заборонено або термін дії сесії закінчився. Будь ласка, увійдіть за допомогою службового Google-акаунту.';
       sessionStorage.removeItem('google_id_token');
       throw new Error('Unauthorized');
     }
@@ -457,7 +466,16 @@
     const fields = ['rowIndex', 'uid', 'name', 'entityName', 'entityId', 'type', 'openingHours', 'availabilityRestriction', 'addressThoroughfare', 'addressLocatorDesignator', 'lat', 'lon', 'permissionNumber', 'permissionStatus'];
     fields.forEach(f => {
       const el = document.getElementById(`field_${f}`);
-      if (el) payload[f] = el.value.trim();
+      if (el) {
+        let val = el.value.trim();
+        if ((f === 'lat' || f === 'lon') && val !== '') {
+          val = val.replace(',', '.');
+          const num = parseFloat(val);
+          payload[f] = isNaN(num) ? '' : num;
+        } else {
+          payload[f] = val;
+        }
+      }
     });
 
     const method = rowIndex ? 'PUT' : 'POST';

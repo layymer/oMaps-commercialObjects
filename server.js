@@ -55,12 +55,14 @@ app.use((req, res, next) => {
 // Allowed user emails for authorization
 const DEFAULT_ALLOWED_EMAILS = [
   'layymer@gmail.com',
-  'murzlik0407@gmail.com'
+  'murzlik0407@gmail.com',
+  'kremsupp@gmail.com'
 ];
 
 function getAllowedEmails() {
-  if (process.env.ALLOWED_EMAILS) {
-    return process.env.ALLOWED_EMAILS.split(',').map(e => e.trim().toLowerCase());
+  const envVal = getEnvFallback('ALLOWED_EMAILS');
+  if (envVal) {
+    return envVal.split(',').map(e => e.trim().toLowerCase());
   }
   return DEFAULT_ALLOWED_EMAILS.map(e => e.toLowerCase());
 }
@@ -217,8 +219,8 @@ const buildRowArray = (body) => [
   body.addressLocatorDesignator || '',
   body.addressLocatorBuilding || '',
   body.addressDescription || '',
-  (body.lat !== null && body.lat !== undefined && body.lat !== '') ? Number(body.lat) : '',
-  (body.lon !== null && body.lon !== undefined && body.lon !== '') ? Number(body.lon) : '',
+  parseCoord(body.lat) !== null ? parseCoord(body.lat) : '',
+  parseCoord(body.lon) !== null ? parseCoord(body.lon) : '',
   body.authorityName || 'Виконавчий комітет Кременчуцької міської ради',
   body.authoritytId || '04057287',
   body.permissionNumber || '',
@@ -272,15 +274,22 @@ function formatRange(sheetName, range) {
 // Backend API handler
 async function handleApiRequest(req, res) {
   const authHeader = req.headers['authorization'] || '';
-  const idToken = authHeader.replace(/^Bearer\s+/i, '');
+  const idToken = authHeader.replace(/^Bearer\s+/i, '').trim();
 
-  const userEmail = await verifyGoogleToken(idToken);
   const allowedEmails = getAllowedEmails();
+  const cfEmail = req.headers['cf-access-authenticated-user-email'];
+
+  let userEmail = null;
+  if (cfEmail && allowedEmails.includes(cfEmail.toLowerCase())) {
+    userEmail = cfEmail.toLowerCase();
+  } else if (idToken) {
+    userEmail = await verifyGoogleToken(idToken);
+  }
 
   if (!userEmail || !allowedEmails.includes(userEmail.toLowerCase())) {
     return res.status(403).json({
       error: 'Access denied: Unauthorized identity',
-      details: userEmail ? `Email ${userEmail} is not in allowed list` : 'Invalid or missing token'
+      details: userEmail ? `Email ${userEmail} is not in allowed list` : 'Invalid or expired Google ID Token. Please sign in again.'
     });
   }
 
