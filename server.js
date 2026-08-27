@@ -199,6 +199,13 @@ const parseCoord = (val) => {
   return isNaN(num) ? null : num;
 };
 
+const formatCoord = (val) => {
+  if (val === null || val === undefined || val === '') return '';
+  const str = String(val).trim().replace(',', '.');
+  const num = parseFloat(str);
+  return isNaN(num) ? '' : str;
+};
+
 const buildRowArray = (body) => [
   body.uid || `TRD-${Date.now()}`,
   body.name || '',
@@ -210,17 +217,17 @@ const buildRowArray = (body) => [
   (body.availabilityRestriction !== undefined && body.availabilityRestriction !== null && String(body.availabilityRestriction).trim() !== '') ? String(body.availabilityRestriction).trim() : '',
   body.CATUTTC || 'UA53020110010112104',
   body.addressPostCode || '39600',
-  'Україна',
-  'Полтавська область',
-  'Кременчуцький район',
+  body.addressAdminUnitL1 || 'Україна',
+  body.addressAdminUnitL2 || 'Полтавська область',
+  body.addressAdminUnitL3 || 'Кременчуцький район',
   body.addressAdminUnitL4 || 'Кременчуцька',
   body.addressPostName || 'Кременчук',
   body.addressThoroughfare || '',
   body.addressLocatorDesignator || '',
   body.addressLocatorBuilding || '',
   body.addressDescription || '',
-  parseCoord(body.lat) !== null ? parseCoord(body.lat) : '',
-  parseCoord(body.lon) !== null ? parseCoord(body.lon) : '',
+  formatCoord(body.lat),
+  formatCoord(body.lon),
   body.authorityName || 'Виконавчий комітет Кременчуцької міської ради',
   body.authoritytId || '04057287',
   body.permissionNumber || '',
@@ -367,7 +374,7 @@ async function handleApiRequest(req, res) {
       const targetRange = encodeURIComponent(formatRange(sheetName, `A${nextRowIndex}:AB${nextRowIndex}`));
 
       const gRes = await fetch(
-        `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${targetRange}?valueInputOption=USER_ENTERED`,
+        `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${targetRange}?valueInputOption=RAW`,
         {
           method: 'PUT',
           headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -393,7 +400,7 @@ async function handleApiRequest(req, res) {
       const targetRange = encodeURIComponent(formatRange(sheetName, `A${body.rowIndex}:AB${body.rowIndex}`));
 
       const gRes = await fetch(
-        `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${targetRange}?valueInputOption=USER_ENTERED`,
+        `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${targetRange}?valueInputOption=RAW`,
         {
           method: 'PUT',
           headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },

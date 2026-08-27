@@ -177,7 +177,7 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-  const WORKER_URL = '/api';
+  const WORKER_URL = window.API_BASE_URL || '/api';
   let map, markersLayer, activeMarker = null, allItems = [], selectedItem = null;
   let idToken = sessionStorage.getItem('google_id_token') || '';
 
@@ -405,10 +405,13 @@
       return;
     }
 
+    const cleanLat = String(lat).replace(',', '.');
+    const cleanLon = String(lon).replace(',', '.');
+
     const payload = {
       ...selectedItem,
-      lat: Number(lat),
-      lon: Number(lon)
+      lat: cleanLat,
+      lon: cleanLon
     };
 
     try {
@@ -461,8 +464,9 @@
   async function saveObject(e) {
     e.preventDefault();
     const rowIndex = document.getElementById('field_rowIndex').value;
+    const existing = rowIndex ? (allItems.find(i => String(i.rowIndex) === String(rowIndex)) || {}) : {};
     
-    const payload = {};
+    const payload = { ...existing };
     const fields = ['rowIndex', 'uid', 'name', 'entityName', 'entityId', 'type', 'openingHours', 'availabilityRestriction', 'addressThoroughfare', 'addressLocatorDesignator', 'lat', 'lon', 'permissionNumber', 'permissionStatus'];
     fields.forEach(f => {
       const el = document.getElementById(`field_${f}`);
@@ -471,7 +475,7 @@
         if ((f === 'lat' || f === 'lon') && val !== '') {
           val = val.replace(',', '.');
           const num = parseFloat(val);
-          payload[f] = isNaN(num) ? '' : num;
+          payload[f] = isNaN(num) ? '' : val;
         } else {
           payload[f] = val;
         }
@@ -479,16 +483,23 @@
     });
 
     const method = rowIndex ? 'PUT' : 'POST';
-    const res = await fetchWithAuth(WORKER_URL, {
-      method: method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
+    try {
+      const res = await fetchWithAuth(WORKER_URL, {
+        method: method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
 
-    if (res.ok) {
-      alert('Зміни збережено в Google Таблицю!');
-      closeModal();
-      loadData();
+      if (res.ok) {
+        alert('Зміни збережено в Google Таблицю!');
+        closeModal();
+        await loadData();
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        alert(`Помилка збереження [${res.status}]: ${errData.error || 'Невідома помилка'}`);
+      }
+    } catch (err) {
+      alert(`Помилка: ${err.message}`);
     }
   }
 
@@ -496,10 +507,17 @@
     e.stopPropagation();
     if (!confirm('Ви дійсно бажаєте перевести цей дозвіл у статус "скасований"?')) return;
 
-    const res = await fetchWithAuth(`${WORKER_URL}?rowIndex=${rowIndex}`, { method: 'DELETE' });
-    if (res.ok) {
-      alert('Статус змінено на "скасований"');
-      loadData();
+    try {
+      const res = await fetchWithAuth(`${WORKER_URL}?rowIndex=${rowIndex}`, { method: 'DELETE' });
+      if (res.ok) {
+        alert('Статус змінено на "скасований"');
+        await loadData();
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        alert(`Помилка зміни статусу [${res.status}]: ${errData.error || 'Невідома помилка'}`);
+      }
+    } catch (err) {
+      alert(`Помилка: ${err.message}`);
     }
   }
 </script>

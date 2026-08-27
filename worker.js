@@ -111,6 +111,13 @@ const parseCoord = (val) => {
   return isNaN(num) ? null : num;
 };
 
+const formatCoord = (val) => {
+  if (val === null || val === undefined || val === '') return '';
+  const str = String(val).trim().replace(',', '.');
+  const num = parseFloat(str);
+  return isNaN(num) ? '' : str;
+};
+
 function formatRange(sheetName, range) {
   const safeTitle = sheetName.replace(/'/g, "''");
   return `'${safeTitle}'!${range}`;
@@ -143,32 +150,33 @@ async function resolveSheetName(spreadsheetId, token, requestedName) {
 
 function buildRowArray(body) {
   return [
-    body.uid || '',
+    body.uid || `TRD-${Date.now()}`,
     body.name || '',
     body.entityName || '',
     body.entityId || '',
-    body.type || '',
-    body.scheduleStandard || 'Пн-Пт 08:00-17:00',
+    body.activityType || 'Роздрібна торгівля',
+    body.type || 'Магазин',
     body.openingHours || '',
-    body.availabilityRestriction || '',
-    body.addressCountry || 'UA',
-    body.addressRegion || 'Полтавська область',
-    body.addressAdminUnit || 'Кременчуцький район',
+    (body.availabilityRestriction !== undefined && body.availabilityRestriction !== null && String(body.availabilityRestriction).trim() !== '') ? String(body.availabilityRestriction).trim() : '',
+    body.CATUTTC || 'UA53020110010112104',
     body.addressPostCode || '39600',
-    body.addressSettlement || 'місто Кременчук',
+    body.addressAdminUnitL1 || 'Україна',
+    body.addressAdminUnitL2 || 'Полтавська область',
+    body.addressAdminUnitL3 || 'Кременчуцький район',
+    body.addressAdminUnitL4 || 'Кременчуцька',
+    body.addressPostName || 'Кременчук',
     body.addressThoroughfare || '',
     body.addressLocatorDesignator || '',
     body.addressLocatorBuilding || '',
     body.addressDescription || '',
-    parseCoord(body.lat) !== null ? parseCoord(body.lat) : '',
-    parseCoord(body.lon) !== null ? parseCoord(body.lon) : '',
+    formatCoord(body.lat),
+    formatCoord(body.lon),
     body.authorityName || 'Виконавчий комітет Кременчуцької міської ради',
     body.authoritytId || '04057287',
     body.permissionNumber || '',
-    body.permissionOrderDate || '',
-    body.permissionStartDate || '',
-    body.permissionExpirationDate || '',
+    body.permissionIssued || '',
     body.permissionStatus || 'чинний',
+    body.permissionValidFrom || '',
     body.permissionValidThrough || ''
   ];
 }
@@ -306,29 +314,30 @@ export default {
             name: row[1] || '',
             entityName: row[2] || '',
             entityId: row[3] || '',
-            type: row[4] || '',
-            scheduleStandard: row[5] || '',
+            activityType: row[4] || '',
+            type: row[5] || '',
             openingHours: row[6] || '',
             availabilityRestriction: row[7] || '',
-            addressCountry: row[8] || 'UA',
-            addressRegion: row[9] || 'Полтавська область',
-            addressAdminUnit: row[10] || 'Кременчуцький район',
-            addressPostCode: row[11] || '39600',
-            addressSettlement: row[12] || 'місто Кременчук',
-            addressThoroughfare: row[13] || '',
-            addressLocatorDesignator: row[14] || '',
-            addressLocatorBuilding: row[15] || '',
-            addressDescription: row[16] || '',
-            lat: parseCoord(row[17]),
-            lon: parseCoord(row[18]),
-            authorityName: row[19] || '',
-            authoritytId: row[20] || '',
-            permissionNumber: row[21] || '',
-            permissionOrderDate: row[22] || '',
-            permissionStartDate: row[23] || '',
-            permissionExpirationDate: row[24] || '',
+            CATUTTC: row[8] || '',
+            addressPostCode: row[9] || '',
+            addressAdminUnitL1: row[10] || 'Україна',
+            addressAdminUnitL2: row[11] || 'Полтавська область',
+            addressAdminUnitL3: row[12] || 'Кременчуцький район',
+            addressAdminUnitL4: row[13] || '',
+            addressPostName: row[14] || '',
+            addressThoroughfare: row[15] || '',
+            addressLocatorDesignator: row[16] || '',
+            addressLocatorBuilding: row[17] || '',
+            addressDescription: row[18] || '',
+            lat: parseCoord(row[19]),
+            lon: parseCoord(row[20]),
+            authorityName: row[21] || '',
+            authoritytId: row[22] || '',
+            permissionNumber: row[23] || '',
+            permissionIssued: row[24] || '',
             permissionStatus: row[25] || 'чинний',
-            permissionValidThrough: row[26] || ''
+            permissionValidFrom: row[26] || '',
+            permissionValidThrough: row[27] || ''
           };
         }).filter(item => item.uid || item.name || item.entityName || item.lat || item.lon);
 
@@ -353,7 +362,7 @@ export default {
         const targetRange = encodeURIComponent(formatRange(sheetName, `A${nextRowIndex}:AB${nextRowIndex}`));
 
         const gRes = await fetch(
-          `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${targetRange}?valueInputOption=USER_ENTERED`,
+          `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${targetRange}?valueInputOption=RAW`,
           {
             method: 'PUT',
             headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -389,7 +398,7 @@ export default {
         const targetRange = encodeURIComponent(formatRange(sheetName, `A${body.rowIndex}:AB${body.rowIndex}`));
 
         const gRes = await fetch(
-          `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${targetRange}?valueInputOption=USER_ENTERED`,
+          `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${targetRange}?valueInputOption=RAW`,
           {
             method: 'PUT',
             headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
