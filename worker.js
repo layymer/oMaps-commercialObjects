@@ -34,8 +34,20 @@ function normalizePem(raw) {
   return `-----BEGIN PRIVATE KEY-----\n${chunks.join('\n')}\n-----END PRIVATE KEY-----\n`;
 }
 
+// In-memory token and data cache
 let cachedToken = null;
 let tokenExpiresAt = 0;
+
+let memoryCache = {
+  data: null,
+  cachedAt: 0,
+  ttlMs: 3 * 60 * 1000 // 3 minutes cache
+};
+
+function invalidateCache() {
+  memoryCache.data = null;
+  memoryCache.cachedAt = 0;
+}
 
 async function getGoogleToken(clientEmail, privateKeyPem) {
   const now = Math.floor(Date.now() / 1000);
@@ -290,8 +302,22 @@ export default {
       const token = await getGoogleToken(clientEmail, privateKey);
       const sheetName = await resolveSheetName(spreadsheetId, token, configuredSheetName);
 
-      // GET - Fetch rows
+      // GET - Fetch rows (with caching)
       if (request.method === 'GET') {
+        const bypassCache = url.searchParams.get('fresh') === 'true' || request.headers.get('Cache-Control') === 'no-cache';
+        const now = Date.now();
+
+        if (!bypassCache && memoryCache.data && (now - memoryCache.cachedAt < memoryCache.ttlMs)) {
+          return new Response(JSON.stringify(memoryCache.data), {
+            status: 200,
+            headers: {
+              ...corsHeaders,
+              'X-Cache': 'HIT',
+              'Cache-Control': 'public, max-age=180, s-maxage=180'
+            }
+          });
+        }
+
         const range = encodeURIComponent(formatRange(sheetName, 'A4:AB'));
         const gRes = await fetch(
           `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}`,
@@ -341,14 +367,23 @@ export default {
           };
         }).filter(item => item.uid || item.name || item.entityName || item.lat || item.lon);
 
+        // Update memory cache
+        memoryCache.data = rows;
+        memoryCache.cachedAt = now;
+
         return new Response(JSON.stringify(rows), {
           status: 200,
-          headers: corsHeaders
+          headers: {
+            ...corsHeaders,
+            'X-Cache': 'MISS',
+            'Cache-Control': 'public, max-age=180, s-maxage=180'
+          }
         });
       }
 
       // POST - Insert new row
       if (request.method === 'POST') {
+        invalidateCache();
         const body = await request.json();
         const rangeA = encodeURIComponent(formatRange(sheetName, 'A:A'));
         const getRes = await fetch(
@@ -386,6 +421,7 @@ export default {
 
       // PUT - Update row
       if (request.method === 'PUT') {
+        invalidateCache();
         const body = await request.json();
         if (!body.rowIndex) {
           return new Response(JSON.stringify({ error: 'Missing rowIndex' }), {
@@ -422,6 +458,7 @@ export default {
 
       // DELETE - Cancel permission
       if (request.method === 'DELETE') {
+        invalidateCache();
         const rowIndex = url.searchParams.get('rowIndex');
         if (!rowIndex) {
           return new Response(JSON.stringify({ error: 'Missing rowIndex query parameter' }), {

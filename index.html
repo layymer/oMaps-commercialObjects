@@ -78,7 +78,8 @@
     <div id="header">
       <h2>Адміністрування реєстру</h2>
       <div id="header-actions">
-        <button class="btn btn-blue" onclick="openFormForCreate()">+ Додати новий об'єкт</button>
+        <button class="btn btn-blue" onclick="openFormForCreate()">+ Додати об'єкт</button>
+        <button class="btn btn-gray" id="btnRefresh" onclick="loadData(true)" title="Оновити дані з Google Таблиці">🔄 Оновити</button>
         <button class="btn btn-gray" onclick="logout()">Вийти</button>
       </div>
     </div>
@@ -252,9 +253,17 @@
     return res;
   }
 
-  async function loadData() {
+  async function loadData(forceRefresh = false) {
+    const btn = document.getElementById('btnRefresh');
+    if (btn) {
+      btn.innerText = '⏳ Завантаження...';
+      btn.disabled = true;
+    }
     try {
-      const res = await fetchWithAuth(WORKER_URL);
+      const url = forceRefresh ? `${WORKER_URL}?fresh=true` : WORKER_URL;
+      const res = await fetchWithAuth(url, {
+        headers: forceRefresh ? { 'Cache-Control': 'no-cache' } : {}
+      });
       const data = await res.json();
       if (!res.ok || !Array.isArray(data)) {
         console.error('Помилка отримання даних:', data);
@@ -271,6 +280,11 @@
       console.error('Помилка завантаження даних:', err);
       allItems = [];
       filterList();
+    } finally {
+      if (btn) {
+        btn.innerText = '🔄 Оновити';
+        btn.disabled = false;
+      }
     }
   }
 

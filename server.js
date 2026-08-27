@@ -278,6 +278,18 @@ function formatRange(sheetName, range) {
   return `'${safeTitle}'!${range}`;
 }
 
+// Memory cache for API responses (3 minutes TTL)
+let serverCache = {
+  data: null,
+  cachedAt: 0,
+  ttlMs: 3 * 60 * 1000
+};
+
+function invalidateServerCache() {
+  serverCache.data = null;
+  serverCache.cachedAt = 0;
+}
+
 // Backend API handler
 async function handleApiRequest(req, res) {
   const authHeader = req.headers['authorization'] || '';
@@ -314,6 +326,15 @@ async function handleApiRequest(req, res) {
     const sheetName = await resolveSheetName(spreadsheetId, token, configuredSheetName);
 
     if (req.method === 'GET') {
+      const bypassCache = req.query.fresh === 'true' || req.headers['cache-control'] === 'no-cache';
+      const now = Date.now();
+
+      if (!bypassCache && serverCache.data && (now - serverCache.cachedAt < serverCache.ttlMs)) {
+        res.setHeader('X-Cache', 'HIT');
+        res.setHeader('Cache-Control', 'public, max-age=180, s-maxage=180');
+        return res.json(serverCache.data);
+      }
+
       const range = encodeURIComponent(formatRange(sheetName, 'A4:AB'));
       const response = await fetch(
         `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}`,
@@ -357,10 +378,16 @@ async function handleApiRequest(req, res) {
         permissionValidThrough: row[27] || ''
       }));
 
+      serverCache.data = items;
+      serverCache.cachedAt = now;
+
+      res.setHeader('X-Cache', 'MISS');
+      res.setHeader('Cache-Control', 'public, max-age=180, s-maxage=180');
       return res.json(items);
     }
 
     if (req.method === 'POST') {
+      invalidateServerCache();
       const body = req.body || {};
       const rangeA = encodeURIComponent(formatRange(sheetName, 'A:A'));
       const getRes = await fetch(
@@ -391,6 +418,7 @@ async function handleApiRequest(req, res) {
     }
 
     if (req.method === 'PUT') {
+      invalidateServerCache();
       const body = req.body || {};
       if (!body.rowIndex) {
         return res.status(400).json({ error: 'Missing rowIndex in payload' });
@@ -417,6 +445,7 @@ async function handleApiRequest(req, res) {
     }
 
     if (req.method === 'DELETE') {
+      invalidateServerCache();
       const rowIndex = req.query.rowIndex;
 
       if (!rowIndex) {
