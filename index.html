@@ -392,53 +392,175 @@
     });
   }
 
+  function extractCleanHouseNumber(rawBuilding) {
+    if (!rawBuilding) return '';
+    let str = String(rawBuilding).trim();
+    if (/^б[\/\.]?н$/i.test(str) || /без\s+номер/i.test(str)) return '';
+
+    // Remove descriptive prefix words
+    str = str.replace(/(в\s+районі|в\s+район[іу]|район[іу]?|біля|навпроти|поблизу|поруч(\s+з)?|кут|перехрестя|житлового\s+будинку|будинок|будинку|буд\.?|буд|приміщення|прим\.?|корпус|корп\.?|літера|літ\.?|сектор|павільйон|кіоск|зупинка|зуп\.?|орієнтир)/gi, ' ');
+    str = str.replace(/[№#Nn]/g, ' ');
+    
+    // Match house number with optional letter, slash or dash (e.g. 14, 14-А, 14А, 102/4)
+    const match = str.match(/\d+([\/\-][0-9а-яa-zА-ЯA-Z]+|[а-яa-zА-ЯA-Z])?/);
+    if (match) {
+      return match[0].trim();
+    }
+    return '';
+  }
+
+  function cleanStreetName(rawStreet) {
+    if (!rawStreet) return '';
+    let str = String(rawStreet).trim();
+    return str.replace(/^(вул\.?|вулиця|просп\.?|проспект|пров\.?|провулок|бульв\.?|бульвар|тупик|проїзд|набережна|кв-л\.?|квартал)\s+/gi, '').trim();
+  }
+
+  async function queryPhoton(query) {
+    try {
+      const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&lat=49.063&lon=33.410&limit=1`;
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.features && data.features.length > 0) {
+          const feat = data.features[0];
+          const coords = feat.geometry.coordinates; // [lon, lat]
+          const isHouse = feat.properties && (feat.properties.type === 'house' || feat.properties.housenumber);
+          return { lat: coords[1], lon: coords[0], hasHouse: isHouse };
+        }
+      }
+    } catch (e) {
+      console.warn('Photon error:', query, e);
+    }
+    return null;
+  }
+
+  async function queryNominatim(query) {
+    try {
+      const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`;
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0) {
+          return {
+            lat: parseFloat(data[0].lat),
+            lon: parseFloat(data[0].lon),
+            hasHouse: data[0].class === 'building' || data[0].type === 'house'
+          };
+        }
+      }
+    } catch (e) {
+      console.warn('Nominatim error:', query, e);
+    }
+    return null;
+  }
+
+  async function searchAddress(street, house) {
+    const cleanHouse = extractCleanHouseNumber(house);
+    const rawStreet = String(street || '').trim();
+    const cleanSt = cleanStreetName(rawStreet);
+    if (!rawStreet && !cleanSt) return null;
+
+    const queries = [];
+    if (cleanHouse) {
+      if (cleanSt) queries.push(`Кременчук ${cleanSt} ${cleanHouse}`);
+      if (rawStreet !== cleanSt) queries.push(`Кременчук ${rawStreet} ${cleanHouse}`);
+    }
+    if (cleanSt) queries.push(`Кременчук ${cleanSt}`);
+    if (rawStreet !== cleanSt) queries.push(`Кременчук ${rawStreet}`);
+
+    // 1. Спроба через Photon (швидкий, оптимізований під координати Кременчука)
+    for (const q of queries) {
+      const res = await queryPhoton(q);
+      if (res) {
+        if (cleanHouse) res.hasHouse = true;
+        return res;
+      }
+    }
+
+    // 2. Спроба через Nominatim OpenStreetMap
+    for (const q of queries) {
+      const res = await queryNominatim(q);
+      if (res) {
+        if (cleanHouse) res.hasHouse = true;
+        return res;
+      }
+    }
+
+    // 3. Спроба знайти інший об'єкт на цій же вулиці в наявному реєстрі
+    if (cleanSt && Array.isArray(allItems)) {
+      const stLower = cleanSt.toLowerCase();
+      const neighbor = allItems.find(it => {
+        if (!it.lat || !it.lon) return false;
+        const itSt = cleanStreetName(it.addressThoroughfare || '').toLowerCase();
+        return itSt && (itSt.includes(stLower) || stLower.includes(itSt));
+      });
+      if (neighbor) {
+        return {
+          lat: parseFloat(neighbor.lat),
+          lon: parseFloat(neighbor.lon),
+          hasHouse: false
+        };
+      }
+    }
+
+    return null;
+  }
+
   async function selectForGeocoding(rowIndex, e) {
     if (e) e.stopPropagation();
     selectedItem = allItems.find(i => i.rowIndex === rowIndex);
+    if (!selectedItem) return;
     filterList();
 
     const banner = document.getElementById('info-banner');
     banner.style.display = 'block';
     banner.innerHTML = `<b>Режим прив'язки:</b><br>${selectedItem.name || 'Об\'єкт'} (${selectedItem.addressThoroughfare || ''}, ${selectedItem.addressLocatorDesignator || ''})<br><i>Вкажіть точне місце на карті кліком або перетягніть маркер.</i>`;
 
+    // 1. Якщо вже є збережені координати
     if (selectedItem.lat && selectedItem.lon) {
-      setTempMarker(selectedItem.lat, selectedItem.lon);
-      map.setView([selectedItem.lat, selectedItem.lon], 19);
-      return;
-    }
-
-    const street = selectedItem.addressThoroughfare || '';
-    const building = selectedItem.addressLocatorDesignator || '';
-    const searchQuery = `Україна, Кременчук, ${street} ${building}`.trim();
-
-    try {
-      const response = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery)}`
-      );
-      const results = await response.json();
-
-      if (results && results.length > 0) {
-        const lat = parseFloat(results[0].lat);
-        const lon = parseFloat(results[0].lon);
+      const lat = parseFloat(selectedItem.lat);
+      const lon = parseFloat(selectedItem.lon);
+      if (!isNaN(lat) && !isNaN(lon)) {
         map.setView([lat, lon], 19);
         setTempMarker(lat, lon);
-      } else {
-        map.setView([49.063, 33.410], 15);
+        return;
       }
-    } catch (err) {
-      console.error('Помилка геокодування:', err);
-      map.setView([49.063, 33.410], 15);
+    }
+
+    // 2. Спроба знайти координати за адресою через Nominatim OSM
+    const coords = await searchAddress(selectedItem.addressThoroughfare, selectedItem.addressLocatorDesignator);
+
+    if (coords && !isNaN(coords.lat) && !isNaN(coords.lon)) {
+      map.setView([coords.lat, coords.lon], coords.hasHouse ? 19 : 16);
+      setTempMarker(coords.lat, coords.lon);
+    } else {
+      // 3. Якщо адресу не знайдено в базі OSM — ставимо маркер у центрі Кременчука
+      const fallbackLat = 49.063;
+      const fallbackLon = 33.410;
+      map.setView([fallbackLat, fallbackLon], 15);
+      setTempMarker(fallbackLat, fallbackLon);
     }
   }
 
   function setTempMarker(lat, lon) {
-    if (activeMarker) map.removeLayer(activeMarker);
-    activeMarker = L.marker([lat, lon], { draggable: true }).addTo(map);
+    const latNum = parseFloat(lat);
+    const lonNum = parseFloat(lon);
+    if (isNaN(latNum) || isNaN(lonNum)) return;
+
+    if (activeMarker) {
+      map.removeLayer(activeMarker);
+      activeMarker = null;
+    }
+
+    activeMarker = L.marker([latNum, lonNum], { draggable: true }).addTo(map);
     
+    const objTitle = selectedItem ? (selectedItem.name || 'Рекламний об\'єкт') : 'Об\'єкт';
     activeMarker.bindPopup(`
-      <b>${selectedItem.name}</b><br>
-      Нові координати: ${lat.toFixed(6)}, ${lon.toFixed(6)}<br><br>
-      <button class="btn btn-blue" onclick="saveCoordinates(${lat}, ${lon})">Зберегти координати</button>
+      <div style="min-width: 170px;">
+        <b style="font-size: 13px;">${objTitle}</b><br>
+        <span style="color: #64748b; font-size: 11px;">Координати: ${latNum.toFixed(6)}, ${lonNum.toFixed(6)}</span><br><br>
+        <button class="btn btn-blue" style="width: 100%; font-size: 12px; padding: 6px 10px;" onclick="saveCoordinates(${latNum}, ${lonNum})">💾 Зберегти координати</button>
+      </div>
     `).openPopup();
 
     activeMarker.on('dragend', function(e) {
