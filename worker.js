@@ -191,6 +191,19 @@ async function verifyGoogleToken(idToken) {
   }
 }
 
+function getWorkerVar(env, key, fallback = '') {
+  if (env && typeof env[key] !== 'undefined' && env[key] !== null && String(env[key]).trim() !== '') {
+    return String(env[key]).trim();
+  }
+  if (typeof globalThis !== 'undefined' && typeof globalThis[key] !== 'undefined' && globalThis[key] !== null && String(globalThis[key]).trim() !== '') {
+    return String(globalThis[key]).trim();
+  }
+  if (typeof process !== 'undefined' && process.env && typeof process.env[key] !== 'undefined' && process.env[key] !== null && String(process.env[key]).trim() !== '') {
+    return String(process.env[key]).trim();
+  }
+  return fallback;
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -224,7 +237,7 @@ export default {
     const idToken = authHeader.replace(/^Bearer\s+/i, '').trim();
     const cfEmail = request.headers.get('cf-access-authenticated-user-email');
 
-    const allowedEnv = env?.ALLOWED_EMAILS || '';
+    const allowedEnv = getWorkerVar(env, 'ALLOWED_EMAILS', '');
     const allowedEmails = allowedEnv
       ? allowedEnv.split(',').map(e => e.trim().toLowerCase())
       : DEFAULT_ALLOWED_EMAILS.map(e => e.toLowerCase());
@@ -246,14 +259,19 @@ export default {
       });
     }
 
-    const spreadsheetId = env?.SPREADSHEET_ID;
-    const configuredSheetName = env?.SHEET_NAME || 'commercialObjects';
-    const clientEmail = env?.GOOGLE_CLIENT_EMAIL;
-    const privateKey = env?.GOOGLE_PRIVATE_KEY;
+    const spreadsheetId = getWorkerVar(env, 'SPREADSHEET_ID', '19v6n6TXVvfluJStp8i6rNDlF-ZIeMWguAhd9Q4TqWLQ');
+    const configuredSheetName = getWorkerVar(env, 'SHEET_NAME', 'commercialObjects');
+    const clientEmail = getWorkerVar(env, 'GOOGLE_CLIENT_EMAIL', 'commercialobjects@orbital-clarity-505815-u9.iam.gserviceaccount.com');
+    const privateKey = getWorkerVar(env, 'GOOGLE_PRIVATE_KEY', '');
 
-    if (!spreadsheetId || !clientEmail || !privateKey) {
+    const missing = [];
+    if (!spreadsheetId) missing.push('SPREADSHEET_ID');
+    if (!clientEmail) missing.push('GOOGLE_CLIENT_EMAIL');
+    if (!privateKey) missing.push('GOOGLE_PRIVATE_KEY');
+
+    if (missing.length > 0) {
       return new Response(JSON.stringify({
-        error: 'Server configuration incomplete: Missing SPREADSHEET_ID, GOOGLE_CLIENT_EMAIL or GOOGLE_PRIVATE_KEY in Cloudflare Worker environment.'
+        error: `Server configuration incomplete: Missing [${missing.join(', ')}] in Cloudflare Worker environment. Please verify that GOOGLE_PRIVATE_KEY is saved in Cloudflare Dashboard -> Settings -> Variables and Secrets and that a new deployment was triggered.`
       }), {
         status: 500,
         headers: corsHeaders

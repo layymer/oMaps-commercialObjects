@@ -3,3 +3,9 @@ main = "worker.js"
 compatibility_date = "2026-08-24"
 compatibility_flags = ["nodejs_compat"]
 assets = { directory = "." }
+
+[vars]
+SPREADSHEET_ID = "19v6n6TXVvfluJStp8i6rNDlF-ZIeMWguAhd9Q4TqWLQ"
+SHEET_NAME = "commercialObjects"
+GOOGLE_CLIENT_EMAIL = "commercialobjects@orbital-clarity-505815-u9.iam.gserviceaccount.com"
+ALLOWED_EMAILS = "layymer@gmail.com,murzlik0407@gmail.com,kremsupp@gmail.com"
